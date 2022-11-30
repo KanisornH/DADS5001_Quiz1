@@ -1,0 +1,355 @@
+# DADS5001_Quiz1
+
+import json
+import PySimpleGUI as sg
+import pymongo
+from bson.objectid import ObjectId
+import pprint
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+client = pymongo.MongoClient("mongodb://Mick:Bnn123456@ac-bzxiiie-shard-00-00.kgdt911.mongodb.net:27017,ac-bzxiiie-shard-00-01.kgdt911.mongodb.net:27017,ac-bzxiiie-shard-00-02.kgdt911.mongodb.net:27017/?ssl=true&replicaSet=atlas-tbj6e1-shard-0&authSource=admin&retryWrites=true&w=majority")
+
+////// ส่วนนี้จะเป็นส่วนของ PysimpleGUI //////
+drinklist = ['tea','coffee','milk','sweet drink','soda']
+sg.theme('SystemDefault1')   # Add a touch of color
+
+mainlayout = [[sg.Text('Please select an option')], [sg.Button('Insert')], [sg.Button('Edit')], [sg.Button('Summary data')], [sg.Button('Close')] ]
+
+insertlayout = [  [sg.Input(key='AddDate', size=(20,1)), sg.CalendarButton('Select Date',  target='AddDate', format='%d-%b-%y', default_date_m_d_y=(None,None,2022), )],
+            [sg.Text('Enter a name'), sg.InputText(key='AddName')],
+            [sg.Text('Enter a drink'), sg.Combo(drinklist, size=(70, 10),key='AddDrink')],
+            [sg.Text('Enter calories'), sg.InputText(key='Calories')  ],
+            [sg.Button('ok'), sg.Button('Back')] ]
+
+updatelayout = [ [sg.Input(key='SearchDate', size=(20,1)), sg.CalendarButton('Select Date',  target='SearchDate', format='%d-%b-%y', default_date_m_d_y=(None,None,2022), )]
+                ,[sg.Text('Enter a name'), sg.InputText(key='Searchname')], [sg.Button('Search')] ,[sg.Listbox(values=[], size=(90, 15), key='showdatabox')] ,[sg.Button('Editdata'),sg.Button('Deletedata'),sg.Button('Main Menu')] ]
+
+
+editlayout = [ [sg.Text('Enter New Date'), sg.Input(key='SelectNewDate', size=(15,1)), sg.CalendarButton('Select Date',  target='SelectNewDate', format='%d-%b-%y', default_date_m_d_y=(None,None,2022), )],
+             [sg.Text('Enter New Name'), sg.InputText(key='Newname')],
+             [sg.Text('Enter New Drink'), sg.Combo(drinklist, size=(50, 10),key='AddNewDrink')],
+             [sg.Text('Enter New calories'), sg.InputText(key='NewCalories')],
+             [sg.Button('Confirm edit'), sg.Button('Back to Update menu')]]
+
+readlayout = [[sg.Input(key='AddStartDate', size=(10,1)), sg.CalendarButton('Select Start Date',  target='AddStartDate', format='%d-%b-%y', default_date_m_d_y=(None,None,2022), ) , sg.Input(key='AddEndDate', size=(10,1)), sg.CalendarButton('Select End Date',  target='AddEndDate', format='%d-%b-%y', default_date_m_d_y=(None,None,2022), )]
+             , [sg.Listbox(values=[],size=(40, 5), key='shownamebox')]
+             , [sg.Button('Get User'), sg.Button('Display Result') , sg.Button('Go to Main Menu')] ]
+
+Graphlayout = [[sg.Canvas(key='figCanvas')],
+              [sg.Button('Exit')]]
+
+layout = [ [sg.Column(mainlayout, key='-COL1-'), sg.Column(insertlayout, visible=False, key='-COL2-'), sg.Column(updatelayout, visible=False, key='-COL3-')
+           , sg.Column(editlayout, visible=False, key='-COL4-'), sg.Column(readlayout, visible=False, key='-COL5-'), sg.Column(Graphlayout, visible=False, key='-COL6-')] ]
+
+    
+window = sg.Window('Calorie Tracking Program', layout)
+
+while True:
+    event, values = window.read()
+    if event == 'Insert':
+        window['-COL1-'].update(visible=False)
+        window['-COL2-'].update(visible=True)
+        window['-COL3-'].update(visible=False)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=False)
+        window['-COL6-'].update(visible=False)
+ 
+//////// เข้าช่วงการ Insert Function ////////
+    #Insert Function มีขั้นตอน 1.รับข้อมูลจาก Input เข้ามา 2.สร้าง Json File 3.เชื่อมต่อกับ database เพื่อทำการ Insert_data
+    if event == 'ok':
+        date = values['AddDate']
+        name = values['AddName']
+        drink = values['AddDrink']
+        calorie = values['Calories']
+        
+        jsondata = "{" + f'"Date":"{date}" , "name":"{name}", "drink":"{drink}", "calorie":{calorie}' + "}"
+        
+        jsonfile = json.loads(jsondata)
+        database = client["Tracking"]
+        collection = database["list"]
+        x = collection.insert_one(jsonfile)
+        
+        sg.Popup('Insert Completed', keep_on_top=True)
+    
+    
+ ///////// ส่วน Edit และ Delete Function ///////
+    #ส่วนต่อจากนี้จะเป็นส่วน Edit และ Delete Function
+    if event == 'Edit':
+        window['-COL1-'].update(visible=False)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=True)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=False)
+        window['-COL6-'].update(visible=False)
+        
+////////// #Edit และ Delete data เริ่มจากการ Search เพื่อดูข้อมูลจาก Date และ ชื่อ เพื่อค้นหารายการที่ต้องการ Edit ด้วยคำสั่ง Collection.find() //////////
+    if event == 'Search':
+        searchname = values['Searchname']
+        searchdate = values['SearchDate']
+        
+        database = client["Tracking"]
+        collection = database["list"]
+        findtext = "{" + f'"name":"{searchname}","Date":"{searchdate}"' +"}"
+        jsonsearchfile = json.loads(findtext)
+        searchdata = collection.find(jsonsearchfile)
+        searcharray = []                             
+        for i in searchdata:
+            searcharray.append(i)
+                                     
+        window['showdatabox'].update(searcharray)
+        print('operation completed')
+    
+    
+///////////// #เก็บข้อมูล ID, Date, Name, Drink, Calories เอาไว้เพื่อแสดงผลในหน้า Interface ถัดไป และ ID จะถูกนำไปใช้เพื่อ Update ข้อมูลใน database ด้วย ////////////
+    if event == 'Editdata':
+        datatoedit = window['showdatabox'].get()
+        datatoeditvaluearray = []
+        for key, value in datatoedit[0].items():
+            datatoeditvaluearray.append(value)
+            
+        window['SelectNewDate'].update(value=datatoeditvaluearray[1])
+        window['Newname'].update(value=datatoeditvaluearray[2])
+        window['AddNewDrink'].update(value=datatoeditvaluearray[3])
+        window['NewCalories'].update(value=datatoeditvaluearray[4])
+      
+    
+        window['-COL1-'].update(visible=False)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=False)
+        window['-COL4-'].update(visible=True)
+        window['-COL5-'].update(visible=False)
+        window['-COL6-'].update(visible=False)
+
+////////// #ขั้นตอนการเชื่อมต่อกับ Database เพื่อที่จะ Update ข้อมูล ประกอบไปด้วยขั้นตอนดังนี้ 1. เก็บข้อมูลชุดใหม่ที่ต้องการจะให้เป็น 2. เชื่อมต่อกับ database เพื่อทำการแก้ไขข้อมูลโดยใช้ Key คือ ID ด้วยคำสั่ง Collection.update_many //////////
+    if event == 'Confirm edit':
+        
+        
+        Newdate = values['SelectNewDate']
+        Newname = values['Newname']
+        Newdrink = values['AddNewDrink']
+        Newcalorie = int(values['NewCalories'])
+        
+        idtoupdate = datatoeditvaluearray[0]
+        objInstance = ObjectId(idtoupdate)
+        
+        myupdatequery = { "_id": objInstance }
+                
+        newvalues = { "$set": {"Date":f"{Newdate}" , "name":f"{Newname}", "drink":f"{Newdrink}", "calorie":Newcalorie} }
+        
+        database = client["Tracking"]
+        collection = database["list"]
+        x = collection.update_many(myupdatequery, newvalues)
+        
+        sg.Popup('Edit Completed', keep_on_top=True)
+        
+/////////////  #ส่วนของการ Delete data มีขั้นตอนดังนี้ 1. เก็บข้อมูลของตัวที่ต้องการจะ delete (เราจะใช้ ID ในการ Delete) 2. เชื่อมต่อกับ database เพื่อ Delete ข้อมูลด้วย collection.delete_many//////////////
+    if event == 'Deletedata':
+        datatodelete = window['showdatabox'].get()
+        datatodeletevaluearray = []
+        for key, value in datatodelete[0].items():
+            datatodeletevaluearray.append(value)
+            
+        idtodelete = datatodeletevaluearray[0]
+        objInstance = ObjectId(idtodelete)
+        
+        mydeletequery = { "_id": objInstance } 
+        
+        database = client["Tracking"]
+        collection = database["list"]
+        x = collection.delete_many(mydeletequery)
+
+        print(x.deleted_count, "Data deleted")
+        
+        #ทำการ Search อีกรอบเพื่ออัพเดทข้อมูลในกล่องแสดงข้อมูลหน้า Search data 
+        
+        searchname = values['Searchname']
+        searchdate = values['SearchDate']
+        
+        database = client["Tracking"]
+        collection = database["list"]
+        findtext = "{" + f'"name":"{searchname}","Date":"{searchdate}"' +"}"
+        jsonsearchfile = json.loads(findtext)
+        searchdata = collection.find(jsonsearchfile)
+        searcharray = []                             
+        for i in searchdata:
+            searcharray.append(i)
+                                     
+        window['showdatabox'].update(searcharray)
+         
+    
+////////// #ส่วนตรงนี้เป็นการทำกราฟเพื่อสรุปผล มีขั้นตอนที่เกี่ยวกับ database หลักๆคือ 1. การ Select distinct เพื่อให้ได้ชื่อของ User ว่ามีใครบ้าง โดยจะมีการ Filter Date ด้วย หาก User ใส่ข้อมูล date มา  2. การ Aggregate ข้อมูลมาเป็นข้อมูลสรุปผล /////////////
+    if event == 'Summary data':
+        window['-COL1-'].update(visible=False)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=False)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=True)
+        window['-COL6-'].update(visible=False)
+        
+    if event == 'Get User':
+        readstartdate = values['AddStartDate']
+        readenddate = values['AddEndDate']
+        
+        if readstartdate == '' and readenddate == '':
+            database = client["Tracking"]
+            collection = database["list"]
+            Getuserdata = collection.distinct("name")
+            Getuserarray = []                             
+            for i in Getuserdata:
+                Getuserarray.append(i)
+                                     
+            window['shownamebox'].update(Getuserarray)
+        
+        if readstartdate == '' and readenddate != '':
+            database = client["Tracking"]
+            collection = database["list"]
+            Getuserdata = collection.distinct("name", {"Date" : {"$lte" : f"{readenddate}"}})
+            Getuserarray = []                             
+            for i in Getuserdata:
+                Getuserarray.append(i)
+                                     
+            window['shownamebox'].update(Getuserarray)
+            
+        if readstartdate != '' and readenddate == '':
+            database = client["Tracking"]
+            collection = database["list"]
+            Getuserdata = collection.distinct("name", {"Date" : {"$gte" : f"{readstartdate}"}})
+            Getuserarray = []                             
+            for i in Getuserdata:
+                Getuserarray.append(i)
+                                     
+            window['shownamebox'].update(Getuserarray)
+            
+        if readstartdate != '' and readenddate != '':
+            database = client["Tracking"]
+            collection = database["list"]
+            Getuserdata = collection.distinct("name", {"Date" : {"$gte" : f"{readstartdate}", "$lte" : f"{readenddate}" }})
+            Getuserarray = []                             
+            for i in Getuserdata:
+                Getuserarray.append(i)
+                                     
+            window['shownamebox'].update(Getuserarray)
+ 
+ //////// คำสั่ง collection.aggregate ที่ผมใช้งานจะมี $Match และ $Group ////////
+ /////// $Match คล้ายกับการ Filter ข้อมูลก่อน Aggregate ในที่นี้ผมใช้ว่า ดึงข้อมูลทั้งหมดหากชื่ออยู่ใน Array เพราะตอนแรกมีแผนว่าจะทำให้ดูกราฟได้พร้อมๆกันหลายๆคน ////////
+ /////// $Group คือการ Aggregate ข้อมูลด้วยในที่นี้จะใช้ Function $Sum ที่ $calcurie เพื่อรวมข้อมูล Calorie ทั้งหมด /////////// 
+    if event == 'Display Result':
+        
+        trackingdataname = window['shownamebox'].get()
+        
+        readstartdate = values['AddStartDate']
+        readenddate = values['AddEndDate']
+        
+        database = client["Tracking"]
+        collection = database["list"]
+           
+        if readstartdate == '' and readenddate == '':
+            dataconsumption = collection.aggregate([
+                    {"$match": { "name" : { "$in":trackingdataname}}},
+                    {"$group": { "_id" : "$drink" , "SumCalorie": {"$sum": "$calorie"}}}
+                    ])
+            graphtitle = 'Pie chart of total calories consumption from drink'
+            
+        if readstartdate == '' and readenddate != '':
+            dataconsumption = collection.aggregate([
+                    {"$match": { "name" : { "$in":trackingdataname}, "Date" : {"$lte" : f"{readenddate}"}}},
+                    {"$group": { "_id" : "$drink" , "SumCalorie": {"$sum": "$calorie"}}}
+                    ])
+            graphtitle = f'Pie chart of total calories consumption from drink : until {readenddate}'
+            
+        if readstartdate != '' and readenddate == '':
+            dataconsumption = collection.aggregate([
+                    {"$match": { "name" : { "$in":trackingdataname}, "Date" : {"$gte" : f"{readstartdate}"}}},
+                    {"$group": { "_id" : "$drink" , "SumCalorie": {"$sum": "$calorie"}}}
+                    ])
+            graphtitle = f'Pie chart of total calories consumption from drink : since {readstartdate}'
+            
+        if readstartdate != '' and readenddate != '':
+            dataconsumption = collection.aggregate([
+                    {"$match": { "name" : { "$in":trackingdataname}, "Date" : {"$lte" : f"{readenddate}"}, "Date" : {"$gte" : f"{readstartdate}"}}},
+                    {"$group": { "_id" : "$drink" , "SumCalorie": {"$sum": "$calorie"}}}
+                    ])
+            graphtitle = f'Pie chart of total calories consumption from drink : {readstartdate} to {readenddate}'
+        
+        dataconsumptionarray = []                             
+        for i in dataconsumption:
+            dataconsumptionarray.append(i)
+        
+        drinkarraytograph = []
+        caloriearraytograph = []
+        for i in dataconsumptionarray:
+            drinkarraytograph.append(i['_id'])
+            caloriearraytograph.append(i['SumCalorie'])
+        
+        def draw_figure(canvas, figure):
+            figure_canvas_agg = FigureCanvasTkAgg(figure, canvas)
+            figure_canvas_agg.draw()
+            figure_canvas_agg.get_tk_widget().pack(side='top', fill='both', expand=1)
+            return figure_canvas_agg
+        
+        def autopct_format(values):
+            def my_format(pct):
+                total = sum(values)
+                val = int(round(pct*total/100.0))
+                return '{v:d}'.format(v=val)
+            return my_format
+        
+        
+        plt.clf()
+        fig = plt.figure(figsize=(6,3), dpi=150)
+        plt.title(graphtitle)
+        plt.pie(caloriearraytograph, labels = drinkarraytograph, autopct = autopct_format(caloriearraytograph),startangle = 90)
+        draw_figure(window['figCanvas'].TKCanvas, fig)
+        
+        window['-COL1-'].update(visible=False)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=False)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=False)
+        window['-COL6-'].update(visible=True)
+        
+    if event == 'Exit':
+        window['-COL1-'].update(visible=False)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=False)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=True)
+        window['-COL6-'].update(visible=False)
+    
+    if event == 'Back':
+        window['-COL1-'].update(visible=True)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=False)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=False)
+        window['-COL6-'].update(visible=False)
+        
+    if event == 'Back to Update menu':
+        window['-COL1-'].update(visible=False)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=True)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=False)
+        window['-COL6-'].update(visible=False)
+        
+    if event == 'Main Menu':
+        window['-COL1-'].update(visible=True)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=False)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=False)
+        window['-COL6-'].update(visible=False)
+        
+    if event == 'Go to Main Menu':
+        window['-COL1-'].update(visible=True)
+        window['-COL2-'].update(visible=False)
+        window['-COL3-'].update(visible=False)
+        window['-COL4-'].update(visible=False)
+        window['-COL5-'].update(visible=False)
+        window['-COL6-'].update(visible=False)
+    
+    if event == sg.WIN_CLOSED or event == 'Close':
+        break
+
+window.close()
